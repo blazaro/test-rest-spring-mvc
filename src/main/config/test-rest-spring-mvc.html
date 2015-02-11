@@ -1,0 +1,286 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml"><head>
+  <title>Maven, Jenkins, Sonar y tests de integracion</title>
+  <meta content="text/html; charset=ISO-8859-1" http-equiv="content-type" />
+  <link rel="stylesheet" type="text/css" href="http://www.adictosaltrabajo.com/sintax/js/syntaxhighlight/styles/shCore.css"></style>
+  <link rel="stylesheet" type="text/css" href="http://www.adictosaltrabajo.com/sintax/js/syntaxhighlight/styles/shThemeDefault.css"></style>
+  <script language="javascript" type="text/javascript" src="http://www.adictosaltrabajo.com/sintax/js/syntaxhighlight/src/shCore.js" ></script>
+  <script language="javascript" type="text/javascript" src="http://www.adictosaltrabajo.com/sintax/js/syntaxhighlight/scripts/shBrushBash.js"></script>
+  <script language="javascript" type="text/javascript" src="http://www.adictosaltrabajo.com/sintax/js/syntaxhighlight/scripts/shBrushJava.js"></script>
+  <script language="javascript" type="text/javascript" src="http://www.adictosaltrabajo.com/sintax/js/syntaxhighlight/scripts/shBrushXml.js"></script>
+  <script language="javascript" type="text/javascript" src="http://www.adictosaltrabajo.com/sintax/js/syntaxhighlight/scripts/shBrushJScript.js"></script>
+  <script language="javascript" type="text/javascript">
+  SyntaxHighlighter.all();
+  </script>
+</head>
+<body>
+<h1>Como hacer tests de nuestros servicios REST con el soporte de Spring MVC y Spring Test</h1>
+<h3>0. Índice de contenidos.</h3>
+<ul>
+  <li><a href="#01">1. Introducción </a></li>
+  <li><a href="#02">2. Configuración del proyecto</a></li>
+  <li><a href="#03">3. Pruebas de la funcionalidad del servicio</a></li>
+  <li><a href="#04">4. Pruebas de la semántica REST: Métodos HTTP y códigos de respuesta</a></li>
+  <li><a href="#05">5. Conclusiones </a></li>
+</ul>
+
+<a name="01"></a>
+<h3>1. Introducción</h3>
+<p>En multitud de proyectos he encontrado servicios REST que hacen una implementación propietaria sin respetar
+  la semántica propia del protocolo HTTP, ya sea para lo métodos HTTP o los códigos HTTP de respuesta. Es común encontranos aplicaciones
+  que ofrecen servicios accesibles por HTTP diciendo que son servicios REST, pero no se presta atención a método HTTP
+  con el que son invocados. Aunque el gran olvidado es el código HTTP de respuesta; donde vemos aplicaciones que
+  crean su propio protocolo con códigos de respuesta propietarios, teniendo que analizar
+  el cuerpo de la respuesta para saber si la petición de los servicios se han procesado correctamente. Es decir, se
+  utiliza el protocolo HTTP únicamente como protocolo de transporte y no como protocolo de aplicación, perdiendo una
+  parte importante de la especificación. Unas guías de que métodos y códigos usar, cuando y cómo, las podemos ver en
+  <a target="_blank" href="http://www.restapitutorial.com/lessons/httpmethods.html">http://www.restapitutorial.com/lessons/httpmethods.html</a>,
+  <a target="_blank" href="http://www.restapitutorial.com/httpstatuscodes.html">http://www.restapitutorial.com/httpstatuscodes.html</a> y
+  <a target="_blank" href="http://restcookbook.com/">http://restcookbook.com/</a>; algunos casos no están exentos de
+  debate sobre si estamos de acuerdo en el método o código a utilizar según un determinado caso.</p>
+<p>Una vez introducida la polémica de cómo definir los API's REST, vamos a dejar que esto cada uno lo discuta consigo
+  mismo, o con quien crea necesario, y en otro ámbito más adecuado. Vamos a suponer que ya tenemos superado ese debate,
+  y tenemos que implementar nuestros servicios REST respetando los métodos HTTP y códigos de respuesta adecuados que hayamos
+  definido en nuestro API.</p>
+<p>Así que en este tutorial nos vamos a centrar en ver como poder hacer pruebas automáticas que no sólo prueben la lógica del servicio,
+  también debemos hacer pruebas que nos aseguren que se respeta el API definido respecto a los métodos y códigos HTTP de respuesta
+  establecidos. A primera vista podríamos pensar que para conseguir esto necesitamos un servidor y hacer peticiones HTTP reales, pero
+  gracias al soporte que nos da el framework de Spring para implementar nuestros servicios,
+  con Spring MVC, y para poder hacer pruebas sobre los mismos, con Spring Test, vamos a ver que podemos simular las peticiones sin necesidad de levantar ningún servidor.</p>
+<p>Como ya tenemos claro qué es lo que queremos probar en este tutorial, definimos un servicio REST que nos sirva de ejemplo para hacer estas pruebas con los siguientes casos de prueba:</p>
+<ul>
+  <li>El servicio devolverá la fecha en la que es invocado.</li>
+  <li>El servicio recibirá un parámetro de entrada "input" y lo devolverá en la respuesta junto con la fecha de entrada.</li>
+  <li>El servicio atenderá ls peticiones por GET devolviendo un HTTP Status 200 OK si se procesan correctamente.</li>
+  <li>El servicio atenderá ls peticiones por POST devolviendo un HTTP Status 200 OK si se procesan correctamente.</li>
+  <li>El servicio devolverá un HTTP Status 405 Method Not Allowed, si se invoca por otro verbo HTTP a los aceptados.</li>
+  <li>El servicio invocado por GET espera recibir un parámetro "input" de forma obligatoria. Si no se recibe este parámetro se debe devolver un HTTP Status 400 Bad Request.</li>
+  <li>El servicio invocado por POST espera recibir un parámetro "input" de forma obligatoria. Si no se recibe este parámetro se debe devolver un HTTP Status 400 Bad Request.</li>
+</ul>
+
+<a name="02"></a>
+<h3>2. Configuración del proyecto</h3>
+<p>Antes de ponernos con cualquier proyecto o tarea, siempre tenemos que hacer alguna tarea de configuración. 
+  Vamos a aprovecharnos de las características de Maven para incluir todas las dependencias que vamos a necesitar en este caso de prueba, así como beneficiarnos del ciclo de vida de Maven
+  para la ejecución de los tests si no los queremos ejecutar desde el entorno de desarrollo.</p>
+<p>¡Manos a la obra! Empezamos por incluir las siguientes dependencias:</p>
+<pre class="brush: xml">
+  ...
+      <!-- ================================ SPRING MVC ==================================== -->
+      <dependency>
+        <groupId>org.springframework</groupId>
+        <artifactId>spring-webmvc</artifactId>
+        <version>${spring.version}</version>
+      </dependency>
+      <!-- ===================================== JSON ===================================== -->
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-core</artifactId>
+        <version>${jackson.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-annotations</artifactId>
+        <version>${jackson.version}</version>
+      </dependency>
+
+      <dependency>
+        <groupId>com.fasterxml.jackson.core</groupId>
+        <artifactId>jackson-databind</artifactId>
+        <version>${jackson.version}</version>
+      </dependency>
+
+      <!-- ====================================== VALIDATION =============================== -->
+      <dependency>
+        <groupId>org.hibernate</groupId>
+        <artifactId>hibernate-validator</artifactId>
+        <version>5.1.3.Final</version>
+      </dependency>
+      <dependency>
+        <groupId>javax.validation</groupId>
+        <artifactId>validation-api</artifactId>
+        <version>1.1.0.Final</version>
+      </dependency>
+
+  ...
+</pre>
+<p>En primer lugar tenemos la dependencia propia de Spring MVC, con lo que tendremos el soporte de todo el framework de Spring más una facilidad  extra a la hora de crear nuestros servicios REST.
+También hemos incluido las dependencias de Jackson, en este caso para la representación en JSON y su facilidad de integración con el propio framework de Spring. Finalmente, en nuestros requisitos hemos
+definido unos criterios de validación que deben cumplir las peticiones que recibe el servicio; para esto nos vamos a aprovechar de la especificación JSR-303 que ya define un mecanismo estándar de
+validaciones e incorporamos el API y la implementación de referencia. Las versiones que estoy usando son:</p>
+<ul>
+  <li>spring.version=4.1.4.RELEASE</li>
+  <li>jackson.version=2.5.0</li>
+</ul>
+
+<p>Con estas dependencias ya podríamos hacer la implementación de nuestro servicios. Si bien no tendríamos una forma fácil de probar la implementación de nuestro servicio.
+  Así que nuestro siguiente paso es configurar el soporte de tests, para que desde nuestro propio proyecto podamos lanzar tests automáticos que comprueben todos los requisitos que hemos definido.
+  Para conseguir esto, añadimos las siguientes dependencias al pom.xml:</p>
+
+<pre class="brush: xml">
+    ...
+    <!-- ==================================== TEST ======================================= -->
+    <dependency>
+      <groupId>junit</groupId>
+      <artifactId>junit</artifactId>
+      <version>4.11</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.hamcrest</groupId>
+      <artifactId>hamcrest-library</artifactId>
+      <version>1.3</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.mockito</groupId>
+      <artifactId>mockito-all</artifactId>
+      <version>1.9.5</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>org.springframework</groupId>
+      <artifactId>spring-test</artifactId>
+      <version>${spring.version}</version>
+      <scope>test</scope>
+    </dependency>
+    <dependency>
+      <groupId>javax.servlet</groupId>
+      <artifactId>javax.servlet-api</artifactId>
+      <version>3.1.0</version>
+      <scope>test</scope>
+    </dependency>
+    ...
+</pre>
+<p>Las primeras dependencias, junit, hamcrest y mockito nos proporcionan el soporte básico de testing para cualquier tipo de proyecto. En nuestro caso, la que más nos va a aportar a la hora de
+  conseguir probar todos los criterios definidos es la dependencia de spring-test, que para su funcionamiento hay que incluir la dependencia de javax.servlet-api.</p>
+<p><b>Nota</b>: Si usamos una versión más antigua de Spring es posible que las dependencias de hibernate-validator y javax.servlet-api tengamos que cambiarlas.</p>
+
+<a name="03"></a>
+<h3>3. Pruebas de la funcionalidad del servicio</h3>
+<p>Ya tenemos todo lo necesario para empezar con la implementación de nuestro servicio. Lo primero es cubrir la funcionalidad propia del servicio que tenemos reflejada en los 2 primeros casos definidos; lo recordamos:</p>
+<ul>
+  <li>El servicio devolverá la fecha en la que es invocado.</li>
+  <li>El servicio recibirá un parámetro de entrada "input" y lo devolverá en la respuesta junto con la fecha de entrada.</li>
+</ul>
+<p>Así que, dado que estamos probando lo suyo sería hacerlo con TDD creando primero nuestros tests. Serían los siguientes:</p>
+<pre class="brush: java">
+  public class PingControllerTest {
+
+    private final static String INPUT = "Hola, mundo";
+
+    private final PingController pingController = new PingController();
+
+    @Test
+    public void shouldReturnInputString() {
+      final PingResponse pingResponse = pingController.ping(INPUT);
+      assertThat(pingResponse, notNullValue());
+      assertThat(pingResponse.getInput(), is(INPUT));
+    }
+
+    @Test
+    public void shouldReturnDate() {
+      final PingResponse pingResponse = pingController.ping(INPUT);
+      assertThat(pingResponse, notNullValue());
+      assertThat(pingResponse.getDate(), org.hamcrest.Matchers.isA(Date.class));
+    }
+ }
+</pre>
+<p><b>Nota</b>: En el caso del test que comprueba la fecha, podríamos extendernos haciendo un "Matcher" que nos compruebe que efectivamente es la fecha actual, pero el objetivo principal de este tutorial es mostar
+  las posibilidades que tenemos y principalmente centrándonos en el siguiente punto.</p>
+<a name="04"></a>
+<h3>4. Pruebas de la semántica REST: Métodos HTTP y códigos de respuesta</h3>
+<p>Ya hemos probado el bloque funcional de nuestro servicio; ahora nos toca probar todo aquello que va asociado al protocolo HTTP, es decir que las invocaciones se hacen mediante los métodos HTTP aceptados y
+  que los códigos de respuesta son los correspondientes según la petición recibida. Recordamos estos criterios:</p>
+<ul>
+  <li>El servicio atenderá ls peticiones por GET devolviendo un HTTP Status 200 OK si se procesan correctamente.</li>
+  <li>El servicio atenderá ls peticiones por POST devolviendo un HTTP Status 200 OK si se procesan correctamente.</li>
+  <li>El servicio devolverá un HTTP Status 405 Method Not Allowed, si se invoca por otro verbo HTTP a los aceptados.</li>
+  <li>El servicio invocado por GET espera recibir un parámetro "input" de forma obligatoria. Si no se recibe este parámetro se debe devolver un HTTP Status 400 Bad Request.</li>
+  <li>El servicio invocado por POST espera recibir un parámetro "input" de forma obligatoria. Si no se recibe este parámetro se debe devolver un HTTP Status 400 Bad Request.</li>
+</ul>
+<p>Para conseguir probar estos casos, aparentemente tendríamos que levantar un servidor que aceptase las peticiones HTTP; pero dado que nos hemos apoyado en Spring a la hora de crear el servicio, el propio framework,
+  en su módulo de tests nos va a permitir "mockear" este servidor y contexto de Spring MVC haciendo uso de la clase org.springframework.test.web.servlet.MockMVC.</p>
+  <pre class="brush: java">
+    ...
+    public class PingControllerSpringIntegrationTest {
+
+      private static final String URL = "/v1/ping";
+
+      private MockMvc mockMvc;
+
+      private final PingController configurationController = new PingController();
+
+      @Before
+      public void beforeTest() {
+        mockMvc = MockMvcBuilders.standaloneSetup(configurationController).build();
+      }
+    ...
+  </pre>
+<p>Así que valiéndonos del módulo de tests de Spring definimos los siguientes tests que cubriran los primeros 3 casos. Comprobando el método HTTP aceptado para recibir las peticiones y sus códigos de respuesta:</p>
+<pre class="brush: java">
+  ...
+  @Test
+  public void shouldReturnHttpCode200OnGet() throws Exception {
+    mockMvc.perform(get(URL+"?input=hola")).andExpect(status().isOk());
+  }
+
+  @Test
+  public void shouldReturnHttpCode200OnPost() throws Exception {
+    mockMvc.perform(post(URL).param("input", "hola")).andExpect(status().isOk());
+  }
+
+  @Test
+  public void shouldReturnHttpCode405OnPUT() throws Exception {
+    mockMvc.perform(put(URL)).andExpect(status().isMethodNotAllowed());
+  }
+  ...
+</pre>
+<p>En estos tests comprobamos que ante peticiones bien formadas recibidas por GET y POST se devuelve un código HTTP "200 OK", mientras que si se recibe la petición por PUT el código de respuesta es "405 Method Not Allowed".
+  La implementación de nuestro servicio en este punto quedaría como sigue:</p>
+<pre class="brush: java">
+@Controller
+@RequestMapping("/v1/ping")
+public class PingController {
+
+  @RequestMapping(method = {RequestMethod.GET,RequestMethod.POST})
+  @ResponseStatus(value = HttpStatus.OK)
+  @ResponseBody
+  public PingResponse ping(@RequestParam(value = "input") String input) {
+    return new PingResponse(new Date(), input);
+  }
+
+}
+</pre>
+<p>Ahora nos queda probar que el parámetro "input" se debe recibir obligatoriamente tanto en peticiones GET como en POST. Así que definimos los siguientes tests:</p>
+<pre class="brush: java">
+  ...
+  	@Test
+	public void shouldReturnHttpCode400OnGetWithoutParameter() throws Exception {
+		mockMvc.perform(get(URL)).andExpect(status().isBadRequest());
+	}
+	
+	@Test
+	public void shouldReturnHttpCode400OnPostWithoutParameter() throws Exception {
+		mockMvc.perform(post(URL)).andExpect(status().isBadRequest());
+	}
+  ...
+</pre>
+<p>Para conseguir hacer la validación y devolver el código de respuesta adecuado, en nuestro caso lo hacemos de un modo muy fácil gracias a Spring MVC y su integración con la especificación
+  de validación JSR-303. Así que simplemente con añadir el atributo "required" en la definición del parámetro, ya se encarga en propio framework de realizar esa validación, y lo que es mejor aún, si detecta que los datos de
+  entrada no cumplen con los criterios definidos devuelve el código "400 Bad Request". Así que lo único que tendríamos que hacer es dejar el método del controlador como sigue:</p>
+<pre class="brush: java">
+  ...
+  public PingResponse ping(@RequestParam(value = "input", required = true) String input) {
+  ...
+</pre>
+<a name="05"></a>
+<h3>5. Conclusiones </h3>
+<p>Hemos introducido el debate de que a la hora de crear nuestros API's REST no sólo hay que hacer un servicio accesible por HTTP, también hay que pararse a pensar en la semántica propia ya definida en el protocolo y decidir
+  que métodos y códigos de respuesta HTTP vamos a usar en cada caso. Una vez hecho esto, hemos comprobado que gracias al soporte de Spring MVC tenemos un modo sencillo de poder probar no sólo la funcionalidad básica, si no también
+  la semántica definida respecto a los métodos y códigos de respuesta HTTP. Además al no necesitar levantar servidores auxiliares, facilita que lo incluyamos en el ciclo de vida de nuestro proyecto a la hora de construirlo, hacer pruebas,
+  incluirlo configuraciones de integración continua, etc.</p>
+<p>
+<p>El código de ejemplo de este tutorial lo podéis descargar de GitHub</p>
+</body></html>
