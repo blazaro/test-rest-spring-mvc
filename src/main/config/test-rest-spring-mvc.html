@@ -240,13 +240,12 @@ validaciones e incorporamos el API y la implementación de referencia. Las versio
 <p>En estos tests comprobamos que ante peticiones bien formadas recibidas por GET y POST se devuelve un código HTTP "200 OK", mientras que si se recibe la petición por PUT el código de respuesta es "405 Method Not Allowed".
   La implementación de nuestro servicio en este punto quedaría como sigue:</p>
 <pre class="brush: java">
-@Controller
+@RestController
 @RequestMapping("/v1/ping")
 public class PingController {
 
   @RequestMapping(method = {RequestMethod.GET,RequestMethod.POST})
   @ResponseStatus(value = HttpStatus.OK)
-  @ResponseBody
   public PingResponse ping(@RequestParam(value = "input") String input) {
     return new PingResponse(new Date(), input);
   }
